@@ -29,7 +29,7 @@ def check_mistakes_in_sessions(series):
         return min(actual_starts) >= end
 
 
-def show_mistakes_in_sessions(cinema_name):
+def get_mistakes_count_in_sessions(cinema_name):
     with engine.connect() as connection:
         cinema_id = get_cinema_id(connection, cinema_name)
         if not cinema_id:
@@ -55,11 +55,14 @@ def show_mistakes_in_sessions(cinema_name):
             ['session_place', 'session_start_date']
         ).apply(check_mistakes_in_sessions).to_frame('is_valid')
 
-        return all(session_film_df.is_valid)
+        return len(session_film_df) - session_film_df.is_valid.sum()
 
 
 if __name__ == '__main__':
     cinema_name = input('Input cinema name: ')
+    mistakes_count = get_mistakes_count_in_sessions(cinema_name)
 
-    result_msg = 'valid' if show_mistakes_in_sessions(cinema_name) else 'invalid'
-    print(f'All sessions for cinema "{cinema_name}" are {result_msg}')
+    if mistakes_count > 0:
+        print(f'Invalid sessions for cinema "{cinema_name}" count: {mistakes_count}')
+    else:
+        print(f'All sessions for cinema "{cinema_name}" are valid')
