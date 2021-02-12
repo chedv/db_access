@@ -17,8 +17,19 @@ film = Table('film', metadata,
              Column('film_duration', Integer, nullable=False))
 
 cinema_session = Table('cinema_session', metadata,
-                       Column('session_place', Integer, primary_key=True),
+                       Column('id', Integer, primary_key=True),
+                       Column('session_place', String, nullable=False),
                        Column('session_start', DateTime, nullable=False),
                        Column('session_price', Numeric(5, 2), nullable=False),
                        Column('cinema_id', Integer, ForeignKey('cinema.id')),
                        Column('film_id', Integer, ForeignKey('film.id')))
+
+client = Table('client', metadata,
+               Column('id', Integer, primary_key=True),
+               Column('first_name', String, unique=True, nullable=False),
+               Column('last_name', String, unique=True, nullable=False),
+               Column('email', String, unique=True, nullable=False))
+
+session_client = Table('session_client', metadata,
+                       Column('session_id', Integer, ForeignKey('cinema_session.id'), primary_key=True),
+                       Column('client_id', Integer, ForeignKey('client.id'), primary_key=True))
