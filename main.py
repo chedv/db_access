@@ -1,70 +1,50 @@
-from database import engine, cinema, cinema_session, film
-
-from sqlalchemy import select
 import pandas as pd
 
-import datetime
+from database import engine, cinema, cinema_session, film
+from dao import CinemaDAO, CinemaSessionDAO
+from handlers import PandasHandlers
 
 
-def get_cinema_id(connection, cinema_name):
-    result = connection.execute(cinema.select().where(cinema.c.cinema_name == cinema_name))
-    cinema_row = result.fetchone()
-    return cinema_row[0] if cinema_row else None
+def get_session_films_rows(cinema_name, output_columns):
+    rows = []
 
-
-def extend_with_start_date(series):
-    return pd.Series([time_start.date() for time_start in series.session_start])
-
-
-def extend_with_end_time(series):
-    return pd.Series([time_start + datetime.timedelta(minutes=film_duration)
-                      for time_start, film_duration in zip(series.session_start, series.film_duration)])
-
-
-def check_mistakes_in_sessions(series):
-    for current_start, end in zip(series.session_start, series.session_end):
-        if len(series.session_start) != len(set(series.session_start)):
-            return False
-        actual_starts = [start for start in series.session_start if start > current_start]
-        if not actual_starts:
-            return True
-        return min(actual_starts) >= end
-
-
-def get_mistakes_count_in_sessions(cinema_name):
     with engine.connect() as connection:
-        cinema_id = get_cinema_id(connection, cinema_name)
+        cinema_dao = CinemaDAO(cinema, connection)
+        cinema_session_dao = CinemaSessionDAO(cinema_session, connection)
+
+        cinema_id = cinema_dao.get_cinema_id(cinema_name)
         if not cinema_id:
             raise ValueError(f'Cinema with name "{cinema_name}" was not found')
 
-        output_columns = [
-            cinema_session.c.session_place,
-            cinema_session.c.session_start,
-            film.c.film_duration
-        ]
+        rows = cinema_session_dao.get_cinema_sessions(cinema_id, output_columns, to_join=(film, 'film_id', 'id'))
 
-        join_stmt = cinema_session.join(film, cinema_session.c.film_id == film.c.id)
-        select_stmt = select(output_columns).select_from(join_stmt)
+    return rows
 
-        result = connection.execute(select_stmt)
-        rows = result.fetchall()
 
-        session_film_df = pd.DataFrame(rows, columns=[col.key for col in output_columns])
-        session_film_df = session_film_df.assign(session_start_date=extend_with_start_date)
-        session_film_df = session_film_df.assign(session_end=extend_with_end_time)
+def get_mistakes_count_in_sessions(cinema_name):
+    output_columns = [
+        cinema_session.c.session_place,
+        cinema_session.c.session_start,
+        film.c.film_duration
+    ]
 
-        session_film_df = session_film_df.groupby(
-            ['session_place', 'session_start_date']
-        ).apply(check_mistakes_in_sessions).to_frame('is_valid')
+    rows = get_session_films_rows(cinema_name, output_columns)
 
-        return len(session_film_df) - session_film_df.is_valid.sum()
+    session_film_df = pd.DataFrame(rows, columns=[col.key for col in output_columns])
+    session_film_df = session_film_df.assign(session_start_date=PandasHandlers.extend_with_start_date)
+    session_film_df = session_film_df.assign(session_end=PandasHandlers.extend_with_end_time)
+
+    session_film_df = session_film_df.groupby(['session_place', 'session_start_date'])
+    session_film_df = session_film_df.apply(PandasHandlers.check_mistakes_in_sessions).to_frame('is_valid')
+
+    return len(session_film_df) - session_film_df.is_valid.sum()
 
 
 if __name__ == '__main__':
-    cinema_name = input('Input cinema name: ')
-    mistakes_count = get_mistakes_count_in_sessions(cinema_name)
+    input_name = input('Input cinema name: ')
+    mistakes_count = get_mistakes_count_in_sessions(input_name)
 
     if mistakes_count > 0:
-        print(f'Invalid sessions for cinema "{cinema_name}" count: {mistakes_count}')
+        print(f'Invalid sessions for cinema "{input_name}" count: {mistakes_count}')
     else:
-        print(f'All sessions for cinema "{cinema_name}" are valid')
+        print(f'All sessions for cinema "{input_name}" are valid')
